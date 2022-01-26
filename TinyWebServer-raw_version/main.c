@@ -105,7 +105,7 @@ int main(int argc, char *argv[])
 
     //创建数据库连接池
     connection_pool *connPool = connection_pool::GetInstance();
-    connPool->init("localhost", "root", "root", "qgydb", 3306, 8);
+    connPool->init("localhost", "root", "123456", "mydb", 3306, 8);
 
     //创建线程池
     threadpool<http_conn> *pool = NULL;
@@ -146,10 +146,12 @@ int main(int argc, char *argv[])
     assert(ret >= 0);
 
     //创建内核事件表
+    /* 用于存储epoll事件表中就绪事件的event数组 */
     epoll_event events[MAX_EVENT_NUMBER];
     epollfd = epoll_create(5);
     assert(epollfd != -1);
 
+    /* 主线程往epoll内核事件表中注册监听socket事件，当listen到新的客户连接时，listenfd变为就绪事件 */
     addfd(epollfd, listenfd, false);
     http_conn::m_epollfd = epollfd;
 
@@ -170,16 +172,17 @@ int main(int argc, char *argv[])
 
     while (!stop_server)
     {
+        /* 主线程调用epoll_wait等待一组文件描述符上的事件，并将当前所有就绪的epoll_event复制到events数组中 */
         int number = epoll_wait(epollfd, events, MAX_EVENT_NUMBER, -1);
         if (number < 0 && errno != EINTR)
         {
             LOG_ERROR("%s", "epoll failure");
             break;
         }
-
+        /* 遍历所有就绪的epoll_event数组，处理这些事件*/
         for (int i = 0; i < number; i++)
         {
-            int sockfd = events[i].data.fd;
+            int sockfd = events[i].data.fd; //事件中就绪的socket的文件描述符
 
             //处理新到的客户连接
             if (sockfd == listenfd)
@@ -187,6 +190,7 @@ int main(int argc, char *argv[])
                 struct sockaddr_in client_address;
                 socklen_t client_addrlength = sizeof(client_address);
 #ifdef listenfdLT
+                // accept() 返回一个新的socket文件描述符用于send()和recv() 
                 int connfd = accept(listenfd, (struct sockaddr *)&client_address, &client_addrlength);
                 if (connfd < 0)
                 {
@@ -199,6 +203,7 @@ int main(int argc, char *argv[])
                     LOG_ERROR("%s", "Internal server busy");
                     continue;
                 }
+                // 将connfd注册到内核事件表
                 users[connfd].init(connfd, client_address);
 
                 //初始化client_data数据
@@ -249,7 +254,7 @@ int main(int argc, char *argv[])
 
             else if (events[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR))
             {
-                //服务器端关闭连接，移除对应的定时器
+                //如果有异常，服务器端关闭连接，移除对应的定时器
                 util_timer *timer = users_timer[sockfd].timer;
                 timer->cb_func(&users_timer[sockfd]);
 
@@ -259,7 +264,7 @@ int main(int argc, char *argv[])
                 }
             }
 
-            //处理信号
+            //处理信号 
             else if ((sockfd == pipefd[0]) && (events[i].events & EPOLLIN))
             {
                 int sig;
@@ -293,15 +298,17 @@ int main(int argc, char *argv[])
                 }
             }
 
-            //处理客户连接上接收到的数据
+            //处理客户连接上接收到的数据，如果这一sockfd上面有可读事件，epoll_wait通知主线程
             else if (events[i].events & EPOLLIN)
             {
                 util_timer *timer = users_timer[sockfd].timer;
+                /* 主线程从这一sockfd循环读取数据, 直到没有更多数据可读 */
                 if (users[sockfd].read_once())
                 {
                     LOG_INFO("deal with the client(%s)", inet_ntoa(users[sockfd].get_address()->sin_addr));
                     Log::get_instance()->flush();
                     //若监测到读事件，将该事件放入请求队列
+                    /* 然后将读取到的数据封装成一个请求对象并插入请求队列 （线程池） */
                     pool->append(users + sockfd);
 
                     //若有数据传输，则将定时器往后延迟3个单位
@@ -324,6 +331,7 @@ int main(int argc, char *argv[])
                     }
                 }
             }
+            /* 当这一sockfd上有可写事件时，epoll_wait通知主线程。主线程往socket上写入服务器处理客户请求的结果 */
             else if (events[i].events & EPOLLOUT)
             {
                 util_timer *timer = users_timer[sockfd].timer;

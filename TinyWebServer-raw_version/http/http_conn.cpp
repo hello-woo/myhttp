@@ -22,7 +22,7 @@ const char *error_500_title = "Internal Error";
 const char *error_500_form = "There was an unusual problem serving the request file.\n";
 
 //当浏览器出现连接重置时，可能是网站根目录出错或http响应格式出错或者访问的文件中内容完全为空
-const char *doc_root = "/home/qgy/github/TinyWebServer/root";
+const char *doc_root = "/home/zzc/myhttp/TinyWebServer-raw_version/root";
 
 //将表中的用户名和密码放入map
 map<string, string> users;
@@ -68,6 +68,7 @@ int setnonblocking(int fd)
 }
 
 //将内核事件表注册读事件，ET模式，选择开启EPOLLONESHOT
+/* 将fd上的EPOLLIN和EPOLLET事件注册到epollfd指示的epoll内核事件中 */
 void addfd(int epollfd, int fd, bool one_shot)
 {
     epoll_event event;
@@ -88,7 +89,7 @@ void addfd(int epollfd, int fd, bool one_shot)
 #ifdef listenfdLT
     event.events = EPOLLIN | EPOLLRDHUP;
 #endif
-
+ /* 针对connfd，开启EPOLLONESHOT，因为我们希望每个socket在任意时刻都只被一个线程处理 */
     if (one_shot)
         event.events |= EPOLLONESHOT;
     epoll_ctl(epollfd, EPOLL_CTL_ADD, fd, &event);
