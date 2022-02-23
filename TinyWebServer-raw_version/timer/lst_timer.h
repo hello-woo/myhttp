@@ -5,6 +5,7 @@
 #include "../log/log.h"
 
 class util_timer;
+//用户数据结构，客户端socket地址，socket文件描述符，定时器
 struct client_data
 {
     sockaddr_in address;
@@ -12,19 +13,21 @@ struct client_data
     util_timer *timer;
 };
 
+//定时器类
 class util_timer
 {
 public:
     util_timer() : prev(NULL), next(NULL) {}
 
 public:
-    time_t expire;
-    void (*cb_func)(client_data *);
-    client_data *user_data;
+    time_t expire;  //任务的超时时间、绝对时间
+    void (*cb_func)(client_data *); //任务回调函数
+    client_data *user_data;         //回调函数处理的客户数据，由定时器的执行者传递个回调函数
     util_timer *prev;
     util_timer *next;
 };
 
+//定时器链表，升序的双向链表，且带有头节点和尾节点
 class sort_timer_lst
 {
 public:

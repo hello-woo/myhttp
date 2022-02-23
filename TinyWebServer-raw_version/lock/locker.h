@@ -26,10 +26,12 @@ public:
     {
         sem_destroy(&m_sem);
     }
+    //wait以原子操作将信号量的值减一，如果为0那么将阻塞，直到为非零值
     bool wait()
     {
         return sem_wait(&m_sem) == 0;
     }
+    //post以原子操作方式将信号量加1，当信号量的值大于0，其他正在调用sem_wait等待信号量的线程将被唤醒
     bool post()
     {
         return sem_post(&m_sem) == 0;
